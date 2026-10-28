@@ -24,7 +24,7 @@
 
     let state = {
       currentPage: 'login', // 'login' | 'halaman_1_gtk' | 'halaman_2_admin'
-      loginTargetPage: 'halaman_1_gtk', // Pilihan di halaman login
+      selectedUsername: 'GTK', // Pilihan dropdown di halaman login: 'GTK' | 'Admin'
       currentUser: null,
       schoolProfile: JSON.parse(localStorage.getItem('smart_sarpras_html_profile') || 'null') || SEED_DATA.schoolProfile,
       assets: JSON.parse(localStorage.getItem('smart_sarpras_html_assets') || 'null') || SEED_DATA.assets,
@@ -37,10 +37,29 @@
       editingAsset: null,
       showAssetModal: false,
       showSheetsModal: false,
-      showUserModal: false,
+      showPasswordModal: false,
       syncStatus: '',
       loginError: ''
     };
+
+    function getAdminPassword() {
+      const adm = state.users.find(u =>
+        u.isOwner ||
+        u.id === 'user-owner-sujargo' ||
+        ((u.username || '').toLowerCase() === 'admin') ||
+        u.pageAccess === 'halaman_2_admin'
+      );
+      return (adm && (adm.accessCode || adm.password)) ? String(adm.accessCode || adm.password).trim() : 'KS1971';
+    }
+
+    function getGtkPassword() {
+      const gtk = state.users.find(u =>
+        u.id === 'user-gtk-readonly' ||
+        ((u.username || '').toLowerCase() === 'gtk') ||
+        u.pageAccess === 'halaman_1_gtk'
+      );
+      return (gtk && (gtk.accessCode || gtk.password)) ? String(gtk.accessCode || gtk.password).trim() : 'gtk123';
+    }
 
     function saveLocal() {
       localStorage.setItem('smart_sarpras_html_profile', JSON.stringify(state.schoolProfile));
@@ -106,91 +125,95 @@
     }
 
     // =========================================================================
-    // AUTENTIKASI LOGIN USER & PASSWORD (2 HALAMAN)
+    // AUTENTIKASI LOGIN SATU PINTU (USERNAME PILIHAN GTK / ADMIN & PASSWORD MANUAL)
     // =========================================================================
     function handleLogin(e) {
       e.preventDefault();
-      const userInp = document.getElementById('login-user').value.trim();
+      const userSelect = document.getElementById('login-user').value;
       const passInp = document.getElementById('login-pass').value.trim();
-      const uClean = userInp.toLowerCase();
-      const pClean = passInp.toLowerCase();
 
-      if (!userInp || !passInp) {
-        state.loginError = 'User dan Password wajib diisi!';
+      if (!passInp) {
+        state.loginError = 'Silakan masukkan Password Anda!';
         render();
         return;
       }
 
-      // Cek kredensial Admin (Halaman 2)
-      if (
-        ((uClean === 'admin' || uClean.includes('sujargo') || uClean === 'kepala sekolah') &&
-         (pClean === 'ks1971' || pClean === 'admin123' || pClean === '197109042006041015'))
-      ) {
-        state.currentUser = { name: 'Sujargo, M.Pd.', username: userInp, role: 'Admin & Kepala Sekolah', pageAccess: 'halaman_2_admin' };
-        state.currentPage = state.loginTargetPage === 'halaman_1_gtk' ? 'halaman_1_gtk' : 'halaman_2_admin';
-        state.loginError = '';
-        render();
-        return;
-      }
-
-      // Cek kredensial GTK (Halaman 1 - Read Only)
-      if (
-        (uClean === 'gtk' || uClean.includes('guru') || uClean.includes('tendik')) &&
-        (pClean === 'gtk123' || pClean === 'guru123' || pClean === '123456')
-      ) {
-        if (state.loginTargetPage === 'halaman_2_admin') {
-          state.loginError = 'Akun Guru & Tenaga Kependidikan hanya memiliki akses Read-Only (Halaman 1).';
+      if (userSelect === 'GTK') {
+        const expectedGtkPass = getGtkPassword();
+        if (passInp === expectedGtkPass || passInp.toLowerCase() === expectedGtkPass.toLowerCase()) {
+          state.currentUser = {
+            name: 'Guru & Tenaga Kependidikan',
+            username: 'GTK',
+            role: 'Guru & Tenaga Kependidikan (Read-Only)',
+            pageAccess: 'halaman_1_gtk'
+          };
+          state.currentPage = 'halaman_1_gtk';
+          state.loginError = '';
           render();
           return;
         }
-        state.currentUser = { name: 'Guru & Tenaga Kependidikan', username: userInp, role: 'Guru & Tendik (Read-Only)', pageAccess: 'halaman_1_gtk' };
-        state.currentPage = 'halaman_1_gtk';
-        state.loginError = '';
+        state.loginError = 'Password untuk Username GTK tidak sesuai!';
         render();
         return;
       }
 
-      // Cek daftar user di database
-      const matched = state.users.find(u => {
-        const un = (u.username || u.name || '').toLowerCase();
-        const nm = (u.name || '').toLowerCase();
-        const pw = (u.accessCode || u.password || '').toLowerCase();
-        return (un === uClean || nm.includes(uClean)) && pw === pClean;
-      });
-
-      if (matched) {
-        const isAdm = matched.pageAccess === 'halaman_2_admin' || (matched.role || '').toLowerCase().includes('admin') || matched.isOwner;
-        if (state.loginTargetPage === 'halaman_2_admin' && !isAdm) {
-          state.loginError = 'Akun Anda berstatus Read-Only (Halaman 1 - Guru & Tenaga Kependidikan).';
+      if (userSelect === 'Admin') {
+        const expectedAdminPass = getAdminPassword();
+        if (passInp === expectedAdminPass || passInp.toLowerCase() === expectedAdminPass.toLowerCase()) {
+          state.currentUser = {
+            name: state.schoolProfile.headmasterName || 'Admin Sarpras',
+            username: 'Admin',
+            role: 'Admin Sarpras (Input & Edit Data)',
+            pageAccess: 'halaman_2_admin'
+          };
+          state.currentPage = 'halaman_2_admin';
+          state.loginError = '';
           render();
           return;
         }
-        state.currentUser = matched;
-        state.currentPage = state.loginTargetPage;
-        state.loginError = '';
+        state.loginError = 'Password untuk Username Admin tidak sesuai!';
         render();
         return;
       }
-
-      state.loginError = 'User atau Password salah! Gunakan akun resmi yang terdaftar.';
-      render();
     }
 
-    function fillQuickLogin(mode) {
-      state.loginTargetPage = mode;
-      state.loginError = '';
-      render();
-      setTimeout(() => {
-        const uEl = document.getElementById('login-user');
-        const pEl = document.getElementById('login-pass');
-        if (mode === 'halaman_1_gtk') {
-          if (uEl) uEl.value = 'gtk';
-          if (pEl) pEl.value = 'gtk123';
-        } else {
-          if (uEl) uEl.value = 'admin';
-          if (pEl) pEl.value = 'KS1971';
+    function savePasswordsForm(e) {
+      e.preventDefault();
+      const newGtkPass = document.getElementById('new-gtk-pass').value.trim();
+      const newAdminPass = document.getElementById('new-admin-pass').value.trim();
+
+      if (!newGtkPass || !newAdminPass) {
+        alert('Password GTK dan Password Admin tidak boleh kosong!');
+        return;
+      }
+
+      const updatedUsers = [
+        {
+          id: 'user-owner-sujargo',
+          username: 'admin',
+          accessCode: newAdminPass,
+          password: newAdminPass,
+          name: state.schoolProfile.headmasterName || 'Sujargo, M.Pd.',
+          role: 'Admin & Kepala Sekolah',
+          pageAccess: 'halaman_2_admin',
+          isOwner: true
+        },
+        {
+          id: 'user-gtk-readonly',
+          username: 'gtk',
+          accessCode: newGtkPass,
+          password: newGtkPass,
+          name: 'Guru & Tenaga Kependidikan',
+          role: 'Guru dan Tenaga Kependidikan',
+          pageAccess: 'halaman_1_gtk',
+          isOwner: false
         }
-      }, 20);
+      ];
+
+      state.users = updatedUsers;
+      state.showPasswordModal = false;
+      state.syncStatus = 'Password GTK & Admin berhasil diperbarui!';
+      pushToGoogleSheets();
     }
 
     // =========================================================================
@@ -262,7 +285,7 @@
     }
 
     function renderLoginPage() {
-      const isGtk = state.loginTargetPage === 'halaman_1_gtk';
+      const isGtk = state.selectedUsername === 'GTK';
       return `
         <div class="min-h-screen bg-slate-900 flex flex-col justify-between p-4 sm:p-8 text-white">
           <header class="max-w-5xl w-full mx-auto flex items-center justify-between border-b border-slate-800 pb-4">
@@ -275,56 +298,36 @@
 
           <main class="my-auto py-8 flex items-center justify-center">
             <div class="w-full max-w-md bg-white text-slate-900 rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
-              <div class="p-6 bg-slate-50 border-b border-slate-200">
+              <!-- Kop : Portal Autentikasi Satu Pintu / SMART SARPRAS -->
+              <div class="px-6 pt-7 pb-5 bg-slate-50 border-b border-slate-200">
                 <div class="text-xs font-bold uppercase tracking-wider text-emerald-700 mb-1">Portal Autentikasi Satu Pintu</div>
-                <h1 class="text-2xl font-extrabold text-slate-900">SMART SARPRAS</h1>
-                <p class="text-xs text-slate-500 mt-1">Pilih halaman tujuan lalu masukkan User dan Password Anda.</p>
-
-                <!-- Pilihan 2 Halaman -->
-                <div class="grid grid-cols-2 gap-2 mt-4 p-1 bg-slate-200/80 rounded-xl">
-                  <button type="button" onclick="fillQuickLogin('halaman_1_gtk')"
-                    class="py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${isGtk ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:text-slate-900'}">
-                    Halaman 1: GTK (Read-Only)
-                  </button>
-                  <button type="button" onclick="fillQuickLogin('halaman_2_admin')"
-                    class="py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${!isGtk ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-700 hover:text-slate-900'}">
-                    Halaman 2: Admin (Input/Edit)
-                  </button>
-                </div>
+                <h1 class="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">SMART SARPRAS</h1>
+                <p class="text-xs text-slate-500 mt-1">${state.schoolProfile.name}</p>
               </div>
 
-              <form onsubmit="handleLogin(event)" class="p-6 space-y-4">
-                <div class="p-3 rounded-xl text-xs ${isGtk ? 'bg-blue-50 text-blue-900 border border-blue-200' : 'bg-emerald-50 text-emerald-900 border border-emerald-200'}">
-                  <strong>${isGtk ? 'Halaman 1 — Guru & Tenaga Kependidikan (Read-Only):' : 'Halaman 2 — Admin Sarpras (Input & Edit Data):'}</strong>
-                  <span class="block mt-0.5 text-[11px] opacity-90">
-                    ${isGtk ? 'Hanya dapat melihat data inventaris, mencari barang, dan mencetak QR tanpa mengubah data.' : 'Dapat menambah aset baru, mengedit data, menghapus, dan menyinkronkan ke Google Sheets.'}
-                  </span>
-                </div>
-
-                ${state.loginError ? `<div class="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">${state.loginError}</div>` : ''}
+              <!-- Kotak Isian : Username (pilihan GTK atau Admin), Password (input manual) -->
+              <form onsubmit="handleLogin(event)" class="p-6 space-y-5">
+                ${state.loginError ? `<div class="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-semibold">${state.loginError}</div>` : ''}
 
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">User / Username *</label>
-                  <input id="login-user" type="text" required placeholder="${isGtk ? 'Ketik: gtk' : 'Ketik: admin atau Sujargo, M.Pd.'}"
-                    class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                  <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Username *</label>
+                  <select id="login-user" onchange="state.selectedUsername=this.value; state.loginError=''; render();"
+                    class="w-full px-3.5 py-3 text-sm font-bold bg-slate-50 border border-slate-300 rounded-xl text-slate-900 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white">
+                    <option value="GTK" ${isGtk ? 'selected' : ''}>GTK (Guru & Tenaga Kependidikan - Read Only)</option>
+                    <option value="Admin" ${!isGtk ? 'selected' : ''}>Admin (Input & Edit Data)</option>
+                  </select>
                 </div>
 
                 <div>
-                  <label class="block text-xs font-bold text-slate-700 uppercase mb-1">Password *</label>
+                  <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">Password *</label>
                   <input id="login-pass" type="password" required placeholder="Masukkan password..."
-                    class="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-slate-900" />
+                    class="w-full px-3.5 py-3 text-sm bg-slate-50 border border-slate-300 rounded-xl text-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-slate-900 focus:bg-white" />
                 </div>
 
                 <button type="submit"
-                  class="w-full py-3 px-4 rounded-xl text-xs font-bold text-white uppercase tracking-wider transition-all cursor-pointer shadow-md ${isGtk ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}">
-                  Masuk ke ${isGtk ? 'Halaman 1 (Guru & Tendik)' : 'Halaman 2 (Admin Sarpras)'}
+                  class="w-full py-3.5 px-4 rounded-xl text-xs font-bold text-white uppercase tracking-wider transition-all cursor-pointer shadow-md ${isGtk ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'}">
+                  Masuk Sebagai ${isGtk ? 'GTK (Halaman 1)' : 'Admin (Halaman 2)'}
                 </button>
-
-                <div class="pt-3 border-t border-slate-100 text-[11px] text-slate-500 space-y-1">
-                  <div class="font-bold text-slate-700">Akun Standar Siap Pakai (Klik tombol di atas untuk isi otomatis):</div>
-                  <div>• <strong>Halaman 1 (GTK Read-Only):</strong> User: <code class="font-mono bg-slate-100 px-1 rounded">gtk</code> | Password: <code class="font-mono bg-slate-100 px-1 rounded">gtk123</code></div>
-                  <div>• <strong>Halaman 2 (Admin Input/Edit):</strong> User: <code class="font-mono bg-slate-100 px-1 rounded">admin</code> | Password: <code class="font-mono bg-slate-100 px-1 rounded">KS1971</code></div>
-                </div>
               </form>
             </div>
           </main>
@@ -397,6 +400,9 @@
                 Muat Ulang dari Google Sheets
               </button>
               ${!isReadOnly ? `
+                <button onclick="state.showPasswordModal=true; render();" class="px-3.5 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl cursor-pointer shadow-xs">
+                  🔑 Ubah Password (GTK & Admin)
+                </button>
                 <button onclick="state.showSheetsModal=true; render();" class="px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl cursor-pointer shadow-xs">
                   Database Google Sheets
                 </button>
@@ -504,10 +510,64 @@
         <!-- MODAL PENGATURAN GOOGLE SHEETS -->
         ${state.showSheetsModal ? renderSheetsModal() : ''}
 
+        <!-- MODAL UBAH PASSWORD GTK & ADMIN -->
+        ${state.showPasswordModal ? renderPasswordModal() : ''}
+
         <footer class="py-6 border-t border-slate-200 bg-white text-center text-xs text-slate-500">
           <div>SMART SARPRAS · ${state.schoolProfile.name}</div>
           <div class="mt-1">---<br/><em>The Teacher does not Tell Stories | Insight Digital | by : Sujargo, M.Pd</em></div>
         </footer>
+      `;
+    }
+
+    function renderPasswordModal() {
+      const currentGtkPass = getGtkPassword();
+      const currentAdminPass = getAdminPassword();
+      return `
+        <div class="fixed inset-0 z-50 bg-slate-900/60 flex items-center justify-center p-4">
+          <div class="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl text-xs">
+            <div class="flex items-center justify-between border-b border-slate-200 pb-3">
+              <div>
+                <h3 class="text-base font-extrabold text-slate-900">Ubah Password Login (GTK & Admin)</h3>
+                <p class="text-[11px] text-slate-500">Admin dapat mengubah password untuk akun GTK maupun Admin sendiri.</p>
+              </div>
+              <button onclick="state.showPasswordModal=false; render();" class="text-slate-400 hover:text-slate-700 font-bold">✕</button>
+            </div>
+
+            <form onsubmit="savePasswordsForm(event)" class="space-y-4">
+              <div class="p-3.5 rounded-xl bg-blue-50 border border-blue-200 space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="font-extrabold text-blue-950">1. Username: GTK</span>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-800">Halaman 1 (Read-Only)</span>
+                </div>
+                <label class="block text-[11px] font-semibold text-blue-900">Password GTK:</label>
+                <input id="new-gtk-pass" type="text" required value="${currentGtkPass}"
+                  class="w-full px-3 py-2 bg-white border border-blue-300 rounded-lg font-mono font-bold text-slate-900" />
+              </div>
+
+              <div class="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="font-extrabold text-emerald-950">2. Username: Admin</span>
+                  <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">Halaman 2 (Input & Edit)</span>
+                </div>
+                <label class="block text-[11px] font-semibold text-emerald-900">Password Admin:</label>
+                <input id="new-admin-pass" type="text" required value="${currentAdminPass}"
+                  class="w-full px-3 py-2 bg-white border border-emerald-300 rounded-lg font-mono font-bold text-slate-900" />
+              </div>
+
+              <div class="flex justify-end gap-2 pt-2 border-t border-slate-200">
+                <button type="button" onclick="state.showPasswordModal=false; render();"
+                  class="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold cursor-pointer">
+                  Batal
+                </button>
+                <button type="submit"
+                  class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold cursor-pointer">
+                  Simpan & Sinkronkan Password
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       `;
     }
 
